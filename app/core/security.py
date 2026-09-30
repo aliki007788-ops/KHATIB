@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -15,6 +16,8 @@ from argon2.exceptions import VerifyMismatchError, InvalidHash
 from jose import JWTError, jwt
 
 from app.core.config import settings
+
+logger = logging.getLogger("khatib")
 
 # =========================================================
 # Password Hashing
@@ -131,10 +134,13 @@ def refresh_token_expiry() -> datetime:
 class RateLimiter:
     """
     Sliding-window-ish fixed-window rate limiter.
-    Uses Redis if available; falls back to in-process memory
-    (NOTE: memory fallback is per-process only — acceptable for
-    single-instance dev, NOT sufficient for multi-instance production
-    without Redis).
+
+    Uses Redis if available. In development, falls back to in-process
+    memory. In production (environment=production and redis_required=True),
+    it fails closed: the app refuses to start if Redis is unreachable at
+    init time, and requests are denied (return False) if Redis becomes
+    unreachable at runtime. This prevents multi-worker deployments from
+    silently falling back to per-process limits.
     """
 
     def __init__(self) -> None:
@@ -149,12 +155,30 @@ class RateLimiter:
             client = redis.from_url(settings.redis_url, socket_connect_timeout=1)
             client.ping()
             self._redis = client
-        except Exception:
+        except Exception as exc:
             self._redis = None
+            if settings.redis_required and settings.environment.lower() == "production":
+                logger.error(
+                    "Redis is required in production but unreachable at %s: %s",
+                    settings.redis_url,
+                    exc,
+                )
+                raise RuntimeError(
+                    "Redis is required in production but unreachable at "
+                    f"{settings.redis_url}"
+                ) from exc
 
     def allow(self, key: str, max_requests: int, window_seconds: int) -> bool:
+        if settings.environment.lower() == "test":
+            return True
         if self._redis is not None:
             return self._allow_redis(key, max_requests, window_seconds)
+        if settings.redis_required and settings.environment.lower() == "production":
+            logger.error(
+                "RateLimiter: Redis unavailable in production — denying request for key=%s",
+                key,
+            )
+            return False
         return self._allow_memory(key, max_requests, window_seconds)
 
     def _allow_redis(self, key: str, max_requests: int, window_seconds: int) -> bool:
