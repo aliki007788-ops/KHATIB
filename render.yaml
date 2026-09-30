@@ -1,0 +1,88 @@
+services:
+  - type: web
+    name: khatib-api
+    runtime: python
+    region: frankfurt
+    plan: starter
+    branch: main
+
+    buildCommand: pip install -r requirements.txt
+    preDeployCommand: alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
+    healthCheckPath: /health/live
+
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+
+      - key: DEBUG
+        value: "false"
+
+      - key: COOKIE_SECURE
+        value: "true"
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: khatib-db
+          property: connectionString
+
+      - key: REDIS_URL
+        sync: false
+
+      - key: JWT_SECRET
+        generateValue: true
+
+      - key: PASSWORD_PEPPER
+        generateValue: true
+
+      - key: AI_API_KEY
+        sync: false
+
+      - key: PAYMENT_PROVIDER
+        value: zarinpal
+
+      - key: ZARINPAL_MERCHANT_ID
+        sync: false
+
+      - key: ZARINPAL_CALLBACK_URL
+        sync: false
+
+      - key: EITAA_BOT_TOKEN
+        sync: false
+
+      - key: EITAA_WEBHOOK_SECRET
+        sync: false
+
+      - key: CORS_ORIGINS
+        sync: false
+
+  - type: worker
+    name: khatib-worker
+    runtime: python
+    region: frankfurt
+    plan: starter
+    branch: main
+
+    buildCommand: pip install -r requirements.txt
+    startCommand: python worker.py
+
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: khatib-db
+          property: connectionString
+
+      - key: REDIS_URL
+        sync: false
+
+      - key: AI_API_KEY
+        sync: false
+
+databases:
+  - name: khatib-db
+    plan: basic-256mb
+    region: frankfurt
