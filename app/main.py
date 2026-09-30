@@ -78,6 +78,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
+        openapi_url=None if settings.is_production else "/openapi.json",
     )
 
     if STATIC_DIR.exists():
@@ -149,6 +150,8 @@ def create_app() -> FastAPI:
 
     @app.get("/docs", include_in_schema=False)
     async def custom_swagger_ui_html():
+        if settings.is_production:
+            return Response(status_code=404)
         return get_swagger_ui_html(
             openapi_url=app.openapi_url,
             title=app.title + " - Swagger UI",
@@ -160,7 +163,7 @@ def create_app() -> FastAPI:
 
     @app.get("/metrics")
     def metrics():
-        if settings.is_production and not settings.metrics_enabled:
+        if settings.is_production:
             return Response(status_code=404)
         return Response(
             content=generate_latest(),
